@@ -2,7 +2,6 @@ import os
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm, trange
-import json
 import random
 
 import torch
@@ -10,10 +9,7 @@ from transformers import MBartForConditionalGeneration, MBart50Tokenizer
 import gc 
 from transformers.optimization import Adafactor 
 import matplotlib.pyplot as plt
-from torch.cuda.amp import autocast
 from torch.cuda.amp import GradScaler
-from torch.optim import Adam, AdamW
-
 
 from sacrebleu import CHRF, BLEU
 
@@ -35,6 +31,7 @@ def translate(text, src='ru_RU', trg='tt_XX', max_length=200, num_beams=5, repet
     return tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
 
 def evaluate_bleu_chrf(model, tokenizer, data, src='ru_RU', trg='tt_XX'):
+    '''Функция для рассчета метрик'''
     model.eval()
     test_src = data['Russian'].to_list()
     test_tgt = data['Tatar'].to_list()
@@ -72,10 +69,13 @@ os.mkdir(save_path)
 model.cuda()
 
 for p in model.parameters():
+    # замораживаем параметры
     p.requires_grad = False
 for p in model.model.shared.parameters():
+    # делаем обучаемыми только эмбединги
     p.requires_grad = True
-     
+
+# оптимизатор градиентного спуска     
 optimizer = Adafactor(
     [p for p in model.parameters() if p.requires_grad], 
     scale_parameter=False, 
@@ -84,11 +84,11 @@ optimizer = Adafactor(
     clip_threshold=1.0
 )
 
+
 batch_size = 4  
 report_steps = 500 
-epochs = 1
+epochs = 1 # warmup эпоха
 losses = []
-
 
 tokenizer.src_lang = "ru_RU"
 tokenizer.tgt_lang = "tt_XX"
@@ -103,13 +103,11 @@ for epoch in range(epochs):
     random.shuffle(all_pairs)
     for i in trange(0, int(len(all_pairs) / batch_size)):
         batch = all_pairs[i * batch_size: (i + 1) * batch_size]
-        # кодируем вопрос и ответ 
         x = tokenizer([p[1] for p in batch], return_tensors='pt', padding=True, truncation=True, max_length=256).to(model.device)
         with tokenizer.as_target_tokenizer():
             y = tokenizer([p[0] for p in batch], return_tensors='pt', padding=True, truncation=True, max_length=256).to(model.device)
-        # -100 - специальное значение, позволяющее не учитывать токены
         y.input_ids[y.input_ids == 0] = -100
-        # вычисляем функцию потерь
+        # вычисляем loss
         try:
             loss = model(
                 input_ids=x.input_ids,
@@ -135,11 +133,11 @@ for epoch in range(epochs):
             print('step', i, 'loss', np.mean(losses[-report_steps:]))
 model.save_pretrained(save_path)
 tokenizer.save_pretrained(save_path)
-#save losses into png file
-pd.Series(losses).ewm(100).mean().plot();
-plt.yscale('log');
-plt.savefig(os.path.join(save_path, 'loss0.png'))
 
+# строим и сохраняем график loss
+pd.Series(losses).ewm(100).mean().plot()
+plt.yscale('log')
+plt.savefig(os.path.join(save_path, 'loss0.png'))
 plt.clf()
 
 
@@ -148,13 +146,11 @@ loss = None
 optimizer.zero_grad(set_to_none=True)
 optimizer = None
 cleanup()
-#     
-#     
-#
+
 for p in model.parameters():
+    # размораживаем все параметры
     p.requires_grad = True
      
-
 
 optimizer = Adafactor(
     [p for p in model.parameters() if p.requires_grad], 
@@ -171,21 +167,17 @@ losses = []
 
 cleanup()
 model.train()
-scaler = GradScaler()
 for epoch in range(epochs):
     print('EPOCH', epoch)
     random.shuffle(all_pairs)
     for i in trange(0, int(len(all_pairs) / batch_size)):
         batch = all_pairs[i * batch_size: (i + 1) * batch_size]
-        # кодируем вопрос и ответ 
         x = tokenizer([p[1] for p in batch], return_tensors='pt', padding=True, truncation=True, max_length=256).to(model.device)
         with tokenizer.as_target_tokenizer():
             y = tokenizer([p[0] for p in batch], return_tensors='pt', padding=True, truncation=True, max_length=256).to(model.device)
-        # -100 - специальное значение, позволяющее не учитывать токены
         y.input_ids[y.input_ids == 0] = -100
         # вычисляем функцию потерь
         try:
-            #with autocast():
             loss = model(
                 input_ids=x.input_ids,
                 attention_mask=x.attention_mask,
@@ -194,7 +186,6 @@ for epoch in range(epochs):
                 return_dict=True
             ).loss
             # делаем шаг градиентного спуска
-            #scaler.scale(loss).backward()
             loss.backward()
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
@@ -213,23 +204,11 @@ for epoch in range(epochs):
     tokenizer.save_pretrained(save_path)
     bleu, chrf  = evaluate_bleu_chrf(model, tokenizer, test_data)
     print(f'After {epoch+1} epoch BLEU: {bleu:2.2f}, CHRF: {chrf:2.2f}')
-pd.Series(losses).ewm(1000).mean().plot();
-plt.yscale('log');
-
+    
+# строим и сохраняем график loss    
+pd.Series(losses).ewm(1000).mean().plot()
+plt.yscale('log')
 plt.savefig(os.path.join(save_path, 'loss1.png'))
-
 plt.close()
 
 
-model.eval()
-test_src = test_data['Russian'].to_list()
-test_tgt = test_data['Tatar'].to_list()
-test_pred = [translate(x) for x in test_src]
-
-test_bleu = BLEU()
-test_chrf = CHRF()
-
-chrf = test_chrf.corpus_score(test_pred, test_tgt).score
-bleu = test_bleu.corpus_score(test_pred, test_tgt).score
-
-print(f'BLEU, {bleu:2.2f}, CHRF, {chrf:2.2f}')

@@ -11,6 +11,7 @@ from heapdict import heapdict
 import numpy as np 
 
 def get_words(text, tokenizer, verbose=False):
+    '''Функция для получения слов из текста'''
     toks = tokenizer.tokenize(text)
     words = []
     word = []
@@ -29,9 +30,10 @@ def get_words(text, tokenizer, verbose=False):
         print(words)
     res = words
     
-    return res
+    return res # результат список слов, в котором каждое слово - это список токенов
 
 def replace_pair(old_tokens, pair, new_token):
+    '''Функция для объединения старых токенов в новый'''
     result = []
     prev = old_tokens[0]
     for tok in old_tokens[1:]:
@@ -58,10 +60,10 @@ def tokenize_fn(corpus):
     word2toks = {}
     for text in tqdm(all_sentences):
         for word_toks in get_words(text, tokenizer):
-            word = ''.join(word_toks)
-            word_count[word] += 1
-            word2toks[word] = word_toks
-    print(len(word_count))
+            word = ''.join(word_toks) # собираем токены в слово
+            word_count[word] += 1 # сколько раз встретилось слово в тексте
+            word2toks[word] = word_toks # ставим в соответствие слову токены в словаре
+    #print(len(word_count))
     word_count2 = deepcopy(word_count)
     word2toks2 = deepcopy(word2toks)
     word_count = deepcopy(word_count2)
@@ -70,14 +72,14 @@ def tokenize_fn(corpus):
     pairs_count = Counter()
     pair2word = defaultdict(set)
     for w, c in tqdm(word_count.items(), total=len(word_count)):
-        enc = word2toks[w]
-        for pair in zip(enc[:-1], enc[1:]):
+        enc = word2toks[w] # токены слова 
+        for pair in zip(enc[:-1], enc[1:]): # определяем пары как два последующих токена
             pairs_count[pair] += c
-            pair2word[pair].add(w)
+            pair2word[pair].add(w) # ставим в соответствие пару токенов и слово
 
     hd = heapdict()
     for w, c in pairs_count.items():
-        hd[w] = -c
+        hd[w] = -c # создаем словарь с приоритетами, определяя наименьший приоритет наиболее часто встречающейся паре токенов
 
     steps = 100000
     min_count = 15 
@@ -89,14 +91,14 @@ def tokenize_fn(corpus):
         pair, c = hd.peekitem()
         c = -c
 
-        if c < min_count:
+        if c < min_count: # сравниваем с граничным значением, для добавления в список новых токенов
             break
         new_token = ''.join(pair) 
         extra_vocab.append(pair)
         extra_counts.append(c)
         extra_pairs.append(pair)
 
-       
+        # Byte Pair Encoding (BPE)
         delta = Counter()
         for word in list(pair2word[pair]):
             old_toks = word2toks[word]
@@ -117,7 +119,7 @@ def tokenize_fn(corpus):
                 hd[a_pair] = 0
             hd[a_pair] -= a_delta
             
-    return extra_vocab, extra_counts, extra_pairs
+    return extra_vocab, extra_counts, extra_pairs # возвращаем список токенов
 
 PUNCT = '.,-—:)(»«!?–/;„"“…*́№Ёҥ[]”^%+І=і•_􏰀²|}{#‘■>⁠’á<°\§\''
 SPACE = '▁'

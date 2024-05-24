@@ -1,17 +1,18 @@
 import os 
 import pandas as pd
 import numpy as np 
+import sentencepiece_model_pb2 as model
+
 from transformers import MBartForConditionalGeneration, MBart50Tokenizer
 from collections import Counter, defaultdict
 from tqdm.auto import tqdm, trange
 from transformers.models.mbart50.tokenization_mbart50 import FAIRSEQ_LANGUAGE_CODES
-import sentencepiece_model_pb2 as model
 from tokenize_fn import tokenize_fn
 
-def get_ru_toks(myv_tok):
+def get_ru_toks(tat_tok):
     ru_toks = []
     ru_weights = []
-    for t, w in token_to_others[myv_tok].items():
+    for t, w in token_to_others[tat_tok].items():
         ru_toks.append(t)
         ru_weights.append(w**2 / token_priors[t])
     ru_weights = np.array(ru_weights)
@@ -39,7 +40,8 @@ for i, pair in enumerate(extra_vocab):
     new_token.piece = ''.join(pair)
     new_token.score = min_score - epsilon * (i+1)
     m.pieces.append(new_token)
-    
+  
+# сохранили токенайзер с новыми токенами     
 with open(os.path.join(cur_path,"tokenizers/old_tokenizer/sentencepiece.bpe.model"), 'wb') as f:
     f.write(m.SerializeToString())
 
@@ -65,21 +67,21 @@ def fix_tokenizer(tokenizer):
         tokenizer._additional_special_tokens.append('tt_XX')
     #tokenizer.added_tokens_encoder = {}
     
-print(new_tokenizer.vocab_size)
+#print(new_tokenizer.vocab_size)
 fix_tokenizer(new_tokenizer)
-print(new_tokenizer.vocab_size)
-print(new_tokenizer.additional_special_tokens_ids)
+#print(new_tokenizer.vocab_size)
+#print(new_tokenizer.additional_special_tokens_ids)
 
 token_priors = Counter()
 token_to_others = defaultdict(Counter)
 
 all_pairs = zip(corpus['Tatar'], corpus['Russian'])
-for myv, ru in tqdm(all_pairs):
-    myv_toks = new_tokenizer.convert_tokens_to_ids(new_tokenizer.tokenize(myv))
+for tat, ru in tqdm(all_pairs):
+    tat_toks = new_tokenizer.convert_tokens_to_ids(new_tokenizer.tokenize(tat))
     ru_toks = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(ru))
     token_priors.update(ru_toks)
-    for myv_tok in myv_toks:
-        token_to_others[myv_tok].update(ru_toks)
+    for tat_tok in tat_toks:
+        token_to_others[tat_tok].update(ru_toks)
      
 
 
@@ -98,7 +100,7 @@ for old_token_id in range(old_vocab_size, len(tokenizer)):
     # model.model.shared.weight.data[i + n_extra] = model.model.shared.weight.data[i]
     model.model.shared.weight.data[new_token_id] = model.model.shared.weight.data[old_token_id]
      
-
+# инициализируем вес нового специального токена tt_XX
 model.model.shared.weight.data[new_tokenizer.convert_tokens_to_ids('tt_XX')] = (
     model.model.shared.weight.data[tokenizer.convert_tokens_to_ids('tr_TR')] * 0.25
     + model.model.shared.weight.data[tokenizer.convert_tokens_to_ids('kk_KZ')] * 0.3
@@ -107,11 +109,11 @@ model.model.shared.weight.data[new_tokenizer.convert_tokens_to_ids('tt_XX')] = (
 )
 
 for i in trange(n_extra):
-    myv_tok = i + old_vocab_size
-    ru_weights, ru_toks = get_ru_toks(myv_tok)
+    tat_tok = i + old_vocab_size
+    ru_weights, ru_toks = get_ru_toks(tat_tok)
     if len(ru_toks) > 0:
         new_embedding = (model.model.shared.weight.data[ru_toks].T * ru_weights).sum(1)
-        model.model.shared.weight.data[myv_tok] = new_embedding
+        model.model.shared.weight.data[tat_tok] = new_embedding
         
         
 model.save_pretrained(os.path.join(cur_path,'tokenizers/new_tokenizer'))

@@ -1,9 +1,11 @@
 ```data_collect.ipynb``` - Сбор данных и разделение на тренировочную и тестовую выборку \
-```tokinizer.py``` - токенайзер для первого подхода \
-```tokinizer_kz.py``` - токенайзер для второго подхода \
+```tokinize_func.py``` - токенизация татарского \
+```tokinizer.py``` - обновление токенайзера для первого подхода \
+```tokinizer_kz.py``` - обновление токенайзера для второго подхода \
 ```train_ru_tat.py``` - обучение с руского на татарский для первого подхода \
 ```train_tat_ru.py``` - обучение с татарского на русский для первого подхода \
-```train_ru_tat_kz.py``` - обучение с руского на татарский для второго подхода
+```train_ru_tat_kz.py``` - обучение с руского на татарский для второго подхода \
+```MODELS = ['Galinyshka/mBART50_rus-tat_v1', 'Galinyshka/mBART50_tat-rus_v1', 'Galinyshka/mBART50_rus-tatkz_v1']```
 
 
 # How to use models
@@ -12,7 +14,7 @@
 ## For models that use tatar language as new language
 ```python
 from transformers import MBartForConditionalGeneration, MBart50Tokenizer
-MODEL = "Galinyshka/mBART50_rus-tat_v1"
+
 
 def fix_tokenizer(tokenizer):
     """ Add a new language token to the tokenizer vocabulary (this should be done each time after its initialization) """
@@ -39,6 +41,7 @@ def translate(text, src='ru_RU', trg='tt_XX', max_length=256, num_beams=5, repet
     )
     return tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
 
+MODEL = "Galinyshka/mBART50_rus-tat_v1" # правильная модель
 model = MBartForConditionalGeneration.from_pretrained(MODEL)
 tokenizer = MBart50Tokenizer.from_pretrained(MODEL)
 
